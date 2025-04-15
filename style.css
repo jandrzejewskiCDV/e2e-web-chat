@@ -1,0 +1,21 @@
+body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+main {
+    display: flex;
+    border: 3px solid green;
+    align-items: center;
+}
+
+input, button {
+    display: block;
+}
+
+.error-message{
+    color: red;
+}
