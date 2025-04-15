@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script src="key_wrapper.js"></script>
+  <script src="message_encryption.js"></script>
+
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet">
+</head>
+<body>
+<span id="message"></span>
+<script>
+  async function a(){
+    /*
+    PROOF that third user cannot read messages between different people
+     */
+
+    let keyPair = await generateKeyPair();
+
+    log("parsing data")
+    let data = "{\"publicKey\":\"-----BEGIN PUBLIC KEY-----\\r\\nMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEvvvgyeS+y56neiCKuM\\/wmi91MWNipvS6N2nsqzLJZTxNcXua9PwIfzZ2Z+gzAT\\/o9AVuNRNxc4yX7\\/Y45wBEvlxK23bhWltb7y+Cnx4HuXfVGu6iSc9ZOImcIlhj7NWB\\r\\n-----END PUBLIC KEY-----\",\"messages\":[{\"message\":\"lhtLGfQ6YjKHnzFgR06FIpeo9m7iq7rD1A==\",\"sender\":17,\"initialization_vector\":\"FK2TihTJkm8=\",\"timestamp\":\"2025-04-15 10:31:04\"},{\"message\":\"HqepZaB4\\/1PDkT2Z+Ir\\/1Sj5E6GJO1lg5oaB4qU=\",\"sender\":18,\"initialization_vector\":\"75kOWYEZR6I=\",\"timestamp\":\"2025-04-15 10:50:41\"}]}";
+    let obj = JSON.parse(data);
+    logJson(JSON.stringify(obj, null, 4))
+
+    log("importing public key")
+    let publicKey = await importPublicKey(obj.publicKey);
+    log("deriving secret key")
+    let secretKey = await deriveSecretKey(keyPair.privateKey, publicKey);
+
+    let messageObj = obj.messages[0];
+
+    log("preparing message for decryption")
+    logJson(JSON.stringify(messageObj, null, 4))
+    let message = base64ToArrayBuffer(messageObj.message);
+    let iv = base64ToArrayBuffer(messageObj.initialization_vector);
+	let decodedMessage = await decryptMessage(secretKey, iv, message);
+	
+	let e = log(decodedMessage)
+	if(decodedMessage === 'Decryption error'){
+		e.style.color = 'red';
+	}else{
+		e.style.color = 'green';
+	}
+  }
+
+  function log(message){
+    const span = document.createElement('span');
+    span.innerText = message;
+
+    const br = document.createElement('br');
+    const messages = document.getElementById('message');
+    messages.appendChild(span);
+    messages.appendChild(br);
+	return span;
+  }
+
+  function logJson(json){
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.className = "language-json";
+    code.innerHTML = json;
+    pre.appendChild(code);
+
+    const br = document.createElement('br');
+    const messages = document.getElementById('message');
+    messages.appendChild(pre);
+    messages.appendChild(br);
+
+    Prism.highlightElement(code)
+  }
+
+  a();
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+</body>
+</html>
