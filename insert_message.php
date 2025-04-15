@@ -1,31 +1,38 @@
 <?php
+function isDataInvalid($data): bool{
+    $userId = $data['userId'] ?? '';
+    $targetId = $data['targetId'] ?? '';
+    $message = $data['message'] ?? '';
+    $iv = $data['iv'] ?? '';
+
+    return !isset($userId) || !isset($targetId) || !isset($message) || !isset($iv);
+}
+
+function isSessionInvalid($userId): bool{
+    $userIdInSession = $_SESSION['userId'];
+    return $userIdInSession !== $userId;
+}
+
 session_start();
 
-$userIdInSession = $_SESSION['userId'];
-
 $data = json_decode(file_get_contents("php://input"), true);
+
+if(isDataInvalid($data)) {
+    echo "{\"failure\": \"invalid params\"}";
+    return;
+}
 
 $userId = $data['userId'] ?? '';
 $targetId = $data['targetId'] ?? '';
 $message = $data['message'] ?? '';
 $iv = $data['iv'] ?? '';
 
-error_log("got messages!");
-error_log($userId);
-error_log($targetId);
-error_log($message);
-error_log($iv);
-error_log("end of messages");
-
-if(!isset($userId) || !isset($targetId) || !isset($message) || !isset($iv)) {
-    echo "{\"failure\": \"invalid params\"}";
-    return;
-}
-
-if($userIdInSession !== $userId){
+if(isSessionInvalid($userId)){
     echo "{\"failure\": \"userid mismatch\"}";
     return;
 }
+
+$message = trim($message);
 
 $conn = mysqli_connect("localhost", "cdv", "cdv", "cdv");
 
@@ -49,5 +56,4 @@ $stmt->execute();
 $stmt->close();
 $conn->close();
 
-error_log("success");
 echo "{\"success\": \"message sent\"}";

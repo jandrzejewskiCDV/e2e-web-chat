@@ -7,73 +7,98 @@
   <script src="message_encryption.js"></script>
 
   <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 </head>
 <body>
-<span id="message"></span>
+<div id="message"></div>
 <script>
-  async function a(){
-    /*
-    PROOF that third user cannot read messages between different people
-     */
+  async function showCase(){
+    let aliceKeyPair = await generateKeyPair();
+    let bobKeyPair = await generateKeyPair();
+    let thirdPartyKeyPair = await generateKeyPair();
 
-    let keyPair = await generateKeyPair();
+    logTitle("🔑 Alice's Key Pair");
+    logCodeBlock(await exportPrivateKey(aliceKeyPair.privateKey));
+    logCodeBlock(await exportPublicKey(aliceKeyPair.publicKey));
 
-    log("parsing data")
-    let data = "{\"publicKey\":\"-----BEGIN PUBLIC KEY-----\\r\\nMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEvvvgyeS+y56neiCKuM\\/wmi91MWNipvS6N2nsqzLJZTxNcXua9PwIfzZ2Z+gzAT\\/o9AVuNRNxc4yX7\\/Y45wBEvlxK23bhWltb7y+Cnx4HuXfVGu6iSc9ZOImcIlhj7NWB\\r\\n-----END PUBLIC KEY-----\",\"messages\":[{\"message\":\"lhtLGfQ6YjKHnzFgR06FIpeo9m7iq7rD1A==\",\"sender\":17,\"initialization_vector\":\"FK2TihTJkm8=\",\"timestamp\":\"2025-04-15 10:31:04\"},{\"message\":\"HqepZaB4\\/1PDkT2Z+Ir\\/1Sj5E6GJO1lg5oaB4qU=\",\"sender\":18,\"initialization_vector\":\"75kOWYEZR6I=\",\"timestamp\":\"2025-04-15 10:50:41\"}]}";
-    let obj = JSON.parse(data);
-    logJson(JSON.stringify(obj, null, 4))
+    logTitle("🔑 Bob's Key Pair");
+    logCodeBlock(await exportPrivateKey(bobKeyPair.privateKey));
+    logCodeBlock(await exportPublicKey(bobKeyPair.publicKey));
 
-    log("importing public key")
-    let publicKey = await importPublicKey(obj.publicKey);
-    log("deriving secret key")
-    let secretKey = await deriveSecretKey(keyPair.privateKey, publicKey);
+    logTitle("🔑 ThirdParty Key Pair");
+    logCodeBlock(await exportPrivateKey(thirdPartyKeyPair.privateKey));
+    logCodeBlock(await exportPublicKey(thirdPartyKeyPair.publicKey));
 
-    let messageObj = obj.messages[0];
+    logTitle("Message Encryption");
 
-    log("preparing message for decryption")
-    logJson(JSON.stringify(messageObj, null, 4))
-    let message = base64ToArrayBuffer(messageObj.message);
-    let iv = base64ToArrayBuffer(messageObj.initialization_vector);
-	let decodedMessage = await decryptMessage(secretKey, iv, message);
-	
-	let e = log(decodedMessage)
-	if(decodedMessage === 'Decryption error'){
-		e.style.color = 'red';
-	}else{
-		e.style.color = 'green';
-	}
+    let initializationVector = generateIV();
+    logCodeBlock("Initialization Vector:\n" + initializationVector);
+
+    let aliceSecret = await deriveSecretKey(aliceKeyPair.privateKey, bobKeyPair.publicKey);
+    let aliceMessageToBob = "alice secret message";
+    let encryptedMessage = await encryptMessage(aliceSecret, initializationVector, aliceMessageToBob);
+    if(encryptedMessage === 'Encoding error'){
+      logCodeBlock("Encoding failed.");
+      return;
+    }
+
+    logCodeBlock(arrayBufferToBase64(encryptedMessage) + " (base64)");
+
+    let bobSecret = await deriveSecretKey(bobKeyPair.privateKey, aliceKeyPair.publicKey);
+    let decryptedMessage = await decryptMessage(bobSecret, initializationVector, encryptedMessage);
+    if(decryptedMessage === 'Decryption error'){
+      logCodeBlock("Decryption failed.");
+      return;
+    }
+
+    logTitle("Message decrypted");
+    logCodeBlock("Message from alice: " + arrayBufferToBase64(encryptedMessage));
+    logCodeBlock("Bob received a message from alice: " + decryptedMessage);
+
+    logTitle("Attacker's attempt to decrypt");
+
+    let attackerData = {
+      privateKey: thirdPartyKeyPair.privateKey,
+      iv : initializationVector,
+      encryptedMessage: encryptedMessage,
+    }
+    await attackerDecrypt(attackerData, aliceKeyPair.publicKey, "Alice's");
+    await attackerDecrypt(attackerData, bobKeyPair.publicKey, "Bob's");
   }
 
-  function log(message){
-    const span = document.createElement('span');
-    span.innerText = message;
-
-    const br = document.createElement('br');
-    const messages = document.getElementById('message');
-    messages.appendChild(span);
-    messages.appendChild(br);
-	return span;
+  async function attackerDecrypt(data, publicKey, publicKeyOwner){
+    let thirdPartySecret = await deriveSecretKey(data.privateKey, publicKey);
+    let thirdPartyDecryptedMessage = await decryptMessage(thirdPartySecret, data.iv, data.encryptedMessage);
+    logCodeBlock("Attempt using " + publicKeyOwner + " public key to decrypt: " + thirdPartyDecryptedMessage);
   }
 
-  function logJson(json){
+  function logTitle(title) {
+    const h3 = document.createElement('h3');
+    h3.innerText = title;
+    document.getElementById('message').appendChild(h3);
+  }
+
+  function logCodeBlock(code){
+    logWithHighlight(code, "language-markup")
+  }
+
+  function logWithHighlight(message, className){
     const pre = document.createElement('pre');
+    pre.className = "line-numbers";
+
     const code = document.createElement('code');
-    code.className = "language-json";
-    code.innerHTML = json;
+    code.className = className;
+    code.innerHTML = message;
+
     pre.appendChild(code);
 
-    const br = document.createElement('br');
     const messages = document.getElementById('message');
     messages.appendChild(pre);
-    messages.appendChild(br);
 
-    Prism.highlightElement(code)
+    Prism.highlightAll();
   }
-
-  a();
-
+  showCase();
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 </body>
 </html>

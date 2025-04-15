@@ -36,7 +36,6 @@ session_start()
                          <span>{$user['username']}</span> 
                   </div>";
         }
-
         ?>
     </div>
     <div class="chat-area">
@@ -48,13 +47,14 @@ session_start()
         </div>
         <div class="chat-input">
             <textarea id="chat-message" placeholder="Type your message here..."></textarea>
-            <button id="buttonsendmessage" onclick="sendMessage()">Send</button>
+            <button id="buttonsendmessage" onclick="sendMessage()" disabled>Send</button>
         </div>
     </div>
 
     <script>
         let user = JSON.parse(sessionStorage.getItem('user'));
         document.getElementById('logged-in-as').innerText = 'Logged in as ' + user.username + '.';
+        document.getElementById('buttonsendmessage').disabled = true;
 
         const chatMessageInput = document.getElementById('chat-message');
 
@@ -63,7 +63,7 @@ session_start()
         let targetPublicKey = null;
 
         async function sendMessage(){
-            let message = chatMessageInput.value;
+            let message = chatMessageInput.value.trim();
             chatMessageInput.value = "";
 
             let storedPrivateKey = sessionStorage.getItem("privateKey");
@@ -100,19 +100,19 @@ session_start()
         async function loadChat(targetId, targetUsername) {
             document.getElementById('buttonsendmessage').disabled = true;
             document.getElementById('chat-name').innerText = "Chat with " + targetUsername;
+            document.getElementById('chat-messages').innerHTML = "";
 
             currentTarget = targetId;
+
             currentTargetName = targetUsername;
-
             const data = await getMessages(targetId);
-            targetPublicKey = await importPublicKey(data.publicKey);
 
+            targetPublicKey = await importPublicKey(data.publicKey);
             let storedPrivateKey = sessionStorage.getItem("privateKey");
+
             let privateKey = await importPrivateKey(storedPrivateKey);
 
             let secret = await deriveSecretKey(privateKey, targetPublicKey);
-
-            document.getElementById('chat-messages').innerHTML = "";
 
             const element = document.getElementById('chat-messages');
             for (let obj of data.messages) {
@@ -124,7 +124,9 @@ session_start()
                 let decrypted = await decryptMessage(secret, iv, message);
 
                 const span = document.createElement('span');
-                span.innerText = " (" + timestamp + ") " + decrypted + " (" + (sender === user.id ? "You" : targetUsername) + ")";
+                span.style.wordWrap = 'break-word';
+                //span.style.whiteSpace = 'normal';
+                span.innerText = " (" + timestamp + ") " + decrypted.trim() + " (" + (sender === user.id ? "You" : targetUsername) + ")";
                 element.appendChild(span);
                 element.appendChild(document.createElement("br"));
             }

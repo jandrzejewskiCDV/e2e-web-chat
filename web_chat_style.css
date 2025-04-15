@@ -3,6 +3,13 @@ body {
     font-family: Consolas, Tahoma, Geneva, Verdana, sans-serif;
     background: #f5f7fa;
 }
+
+button:disabled {
+    background-color: #d3d3d3 !important;
+    color: #a9a9a9 !important;
+    cursor: not-allowed !important;
+}
+
 .container {
     display: flex;
     height: 100vh;
@@ -69,6 +76,10 @@ body {
     flex: 1;
     overflow-y: auto;
     padding-right: 10px;
+}
+
+.balanced-text {
+    text-wrap: balance;
 }
 
 .chat-input {
