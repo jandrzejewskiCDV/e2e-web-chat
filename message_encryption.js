@@ -11,7 +11,7 @@ async function generateKeyPair() {
         return await crypto.subtle.generateKey(
             {
                 name: "ECDH",
-                namedCurve: "P-256",
+                namedCurve: "P-384",
             },
             true,
             ["deriveKey"]

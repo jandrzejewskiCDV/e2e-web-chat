@@ -57,10 +57,10 @@ async function unwrapKey(encryptedData, password){
         },
         {
             name: "ECDH",
-            namedCurve: "P-256",
+            namedCurve: "P-384",
         },
         true,
-        ["deriveBits", "deriveKey"]
+        ["deriveKey"]
     );
 }
 
@@ -84,10 +84,10 @@ function importPrivateKey(pem){
         buffer,
         {
             name: "ECDH",
-            namedCurve: "P-256",
+            namedCurve: "P-384",
         },
         true,
-        ["deriveBits", "deriveKey"],
+        ["deriveKey"],
     );
 }
 
@@ -111,7 +111,7 @@ function importPublicKey(pem) {
         buffer,
         {
             name: "ECDH",
-            namedCurve: "P-256",
+            namedCurve: "P-384",
         },
         true,
         [],
