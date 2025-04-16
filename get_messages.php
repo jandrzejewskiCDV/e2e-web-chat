@@ -1,12 +1,28 @@
 <?php
-
-$user = $_GET['user'] ?? "";
-$target = $_GET['target'] ?? "";
-
-if(!isset($user) || !isset($target)){
-    echo "{}";
+$data = json_decode(file_get_contents("php://input"), true);
+if(empty($data)) {
+    echo "{\"failure\": \"empty json\"}";
+    error_log("empty json");
     return;
 }
+
+if(!isset($data['targetId'])){
+    echo "{\"failure\": \"invalid targetId\"}";
+    error_log("invalid target id");
+    return;
+}
+
+session_start();
+
+$sessionId = $data['sessionId'] ?? '';
+if(empty($sessionId) || !isset($_SESSION[$sessionId])) {
+    echo "{\"failure\": \"invalid sessionId\"}";
+    error_log("failure invalid session id");
+    return;
+}
+
+$user = $_SESSION[$sessionId]['userId'];
+$target = $data['targetId'];
 
 $conn = mysqli_connect("localhost", "cdv", "cdv", "cdv");
 if($conn -> connect_error){

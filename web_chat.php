@@ -17,26 +17,47 @@ session_start()
     <div class="users-list">
         <h2>Users</h2>
         <h7 id="logged-in-as"></h7>
-        <?php
-        $userId = $_SESSION['userId'];
 
-        $conn = mysqli_connect("localhost", "cdv", "cdv", "cdv");
-        if (!$conn)
-            die("Connection failed: " . mysqli_connect_error());
-        $sql = "SELECT id, username FROM users";
-        $result = $conn->execute_query($sql);
-        $conn->close();
+        <script>
+            let sessionId = sessionStorage.getItem('sessionId');
+            let element = document.getElementsByClassName("users-list")[0];
 
-        foreach ($result as $user) {
-            if ($user['id'] == $userId)
-                continue;
+            fetch('get_users.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: sessionId,
+                })
+            }).then((response) =>{
+                return response.json();
+            }).then((data) =>{
+                if(data.failure){
+                    window.location = 'login.php';
+                    return;
+                }
 
-            echo "<div class='user' onclick='loadChat({$user['id']}, \"{$user['username']}\")'>
-                         <img src='account-icon.png' alt='User Avatar'> 
-                         <span>{$user['username']}</span> 
-                  </div>";
-        }
-        ?>
+                data.forEach((item) =>{
+                    let div = document.createElement('div');
+                    div.classList.add('user');
+                    div.addEventListener('click', function(){
+                        loadChat(item.id, item.username)
+                    })
+
+                    let img = document.createElement('img');
+                    img.src = 'account-icon.png';
+                    img.alt = 'User Avatar';
+                    div.appendChild(img);
+
+                    let span = document.createElement('span');
+                    span.innerText = item.username;
+                    div.appendChild(span);
+
+                    element.appendChild(div);
+                })
+            });
+        </script>
     </div>
     <div class="chat-area">
         <div class="chat-header">
@@ -74,7 +95,7 @@ session_start()
             let encryptedMessage = await encryptMessage(secret, iv, message);
 
             await postMessage({
-                userId: user.id,
+                sessionId: sessionStorage.getItem('sessionId'),
                 targetId: currentTarget,
                 message: arrayBufferToBase64(encryptedMessage),
                 iv: arrayBufferToBase64(iv),
@@ -95,6 +116,8 @@ session_start()
             if(!response.ok){
                 console.error("Could not send message");
             }
+
+            console.log(JSON.stringify(await response.json()))
         }
 
         async function loadChat(targetId, targetUsername) {
@@ -106,6 +129,10 @@ session_start()
 
             currentTargetName = targetUsername;
             const data = await getMessages(targetId);
+            if(data.failure){
+                window.location = 'login.php';
+                return;
+            }
 
             targetPublicKey = await importPublicKey(data.publicKey);
             let storedPrivateKey = sessionStorage.getItem("privateKey");
@@ -136,11 +163,18 @@ session_start()
 
         async function getMessages(targetId){
             try{
-                const body = await fetch(`get_messages.php?user=${user.id}&target=${targetId}`);
+                const body = await fetch('get_messages.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({sessionId: sessionStorage.getItem('sessionId'), targetId: targetId})
+                })
+
                 return await body.json();
             }catch (e){
                 console.error(e)
-                return "{}";
+                return {};
             }
         }
     </script>

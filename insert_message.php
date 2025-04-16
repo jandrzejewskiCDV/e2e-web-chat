@@ -1,16 +1,15 @@
 <?php
 function isDataInvalid($data): bool{
-    $userId = $data['userId'] ?? '';
+    $sessionId = $data['sessionId'] ?? '';
     $targetId = $data['targetId'] ?? '';
     $message = $data['message'] ?? '';
     $iv = $data['iv'] ?? '';
 
-    return !isset($userId) || !isset($targetId) || !isset($message) || !isset($iv);
+    return !isset($sessionId) || !isset($targetId) || !isset($message) || !isset($iv);
 }
 
-function isSessionInvalid($userId): bool{
-    $userIdInSession = $_SESSION['userId'];
-    return $userIdInSession !== $userId;
+function isSessionInvalid($sessionId): bool{
+    return !isset($_SESSION[$sessionId]);
 }
 
 session_start();
@@ -19,16 +18,18 @@ $data = json_decode(file_get_contents("php://input"), true);
 
 if(isDataInvalid($data)) {
     echo "{\"failure\": \"invalid params\"}";
+    error_log("invalid params");
     return;
 }
 
-$userId = $data['userId'] ?? '';
+$sessionId = $data['sessionId'] ?? '';
 $targetId = $data['targetId'] ?? '';
 $message = $data['message'] ?? '';
 $iv = $data['iv'] ?? '';
 
-if(isSessionInvalid($userId)){
+if(isSessionInvalid($sessionId)){
     echo "{\"failure\": \"userid mismatch\"}";
+    error_log("session invalid");
     return;
 }
 
@@ -38,6 +39,14 @@ $conn = mysqli_connect("localhost", "cdv", "cdv", "cdv");
 
 if ($conn->connect_error)
     die("Connection failed: " . $conn->connect_error);
+
+$userId = $_SESSION[$sessionId]['userId'] ?? "";
+
+if(empty($userId)){
+    echo "{\"failure\": \"userid mismatch\"}";
+    error_log("userid mismatch");
+    return;
+}
 
 $userOne = min($userId, $targetId);
 $userTwo = max($userId, $targetId);
@@ -57,3 +66,4 @@ $stmt->close();
 $conn->close();
 
 echo "{\"success\": \"message sent\"}";
+error_log("all good");

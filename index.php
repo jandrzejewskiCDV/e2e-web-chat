@@ -8,8 +8,11 @@
 </head>
 <body>
 <main>
-    <button onclick="window.location.href='register.php'">Go to registration</button>
-    <button onclick="window.location.href='login.php'">Go to login</button>
+    <div class="start-form">
+        <h1>Secure Chat</h1>
+        <button class="start-form-log" onclick="window.location.href='login.php'">Go to login</button>
+        <button class="start-form-reg" onclick="window.location.href='register.php'">Go to registration</button>
+    </div>
 </main>
 </body>
 </html>
