@@ -63,9 +63,15 @@ session_start()
             }
 
             async function onMessage(event){
-                console.log(event)
-                if(currentTarget == null || currentTargetName == null || !chatLoaded)
+                if(user == null || currentTarget == null || currentTargetName == null || !chatLoaded)
                     return;
+
+                console.log(event.data)
+                console.log(Number(event.data))
+
+                if(currentTarget !== Number(event.data)){
+                    return;
+                }
 
                 await loadChat(currentTarget, currentTargetName);
             }

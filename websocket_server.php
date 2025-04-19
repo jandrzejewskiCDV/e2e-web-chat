@@ -158,7 +158,7 @@ function onMessage(int $fromUserId, string $jsonData): void {
 
     echo $fromUserId . " to " . $data->targetId . "\r\n";
 
-    $frame = encode("update from " . $fromUserId);
+    $frame = encode($fromUserId);
     @fwrite($clients[$targetSid], $frame);
 }
 
