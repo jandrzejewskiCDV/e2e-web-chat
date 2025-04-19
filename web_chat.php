@@ -19,6 +19,69 @@ session_start()
         <h7 id="logged-in-as"></h7>
 
         <script>
+            let retry = 0;
+            let maxRetries = 2;
+            let socket = null;
+
+            function connectSocket(){
+                console.log(sessionStorage.getItem('sessionId'))
+                socket = new WebSocket('https://jacek.website:8443', [
+                    'Authorization', sessionStorage.getItem('sessionId')
+                ]);
+                socket.addEventListener('open', onOpen);
+                socket.addEventListener('close', onClose);
+                socket.addEventListener('error', onError);
+                socket.addEventListener('message', onMessage);
+            }
+
+            function onOpen(event){
+                SetSendButtonActive(true)
+                console.log("Web socket connected!")
+                retry = 0;
+            }
+
+            function onClose(event){
+                console.log("WebSocket closed with code:", event.code, "and reason:", event.reason);
+
+                SetSendButtonActive(false)
+                socket = null;
+
+                if(retry === maxRetries){
+                    console.error("websocket connection failed!");
+                    window.location.href = 'login.php';
+                    return;
+                }
+
+                retry++;
+                console.log("retry count: " + retry);
+                connectSocket();
+            }
+
+            function onError(event){
+                console.log("Error", event);
+                console.log(event.code)
+            }
+
+            async function onMessage(event){
+                console.log(event)
+                if(currentTarget == null || currentTargetName == null || !chatLoaded)
+                    return;
+
+                await loadChat(currentTarget, currentTargetName);
+            }
+
+            function sendSocketMessage(json){
+                if(socket == null || socket.readyState !== WebSocket.OPEN)
+                    return;
+
+                console.log("socket sent!", json)
+                socket.send(json)
+            }
+
+            connectSocket();
+        </script>
+
+        <script>
             let sessionId = sessionStorage.getItem('sessionId');
             let element = document.getElementsByClassName("users-list")[0];
 
@@ -70,20 +133,38 @@ session_start()
             <textarea id="chat-message" placeholder="Type your message here..."></textarea>
             <button id="buttonsendmessage" onclick="sendMessage()" disabled>Send</button>
         </div>
+        <button id="jump-to-bottom" style="display: none;" onclick="scrollToBottom()">⬇ Jump to Bottom</button>
     </div>
 
     <script>
+        const sendButton = document.getElementById('buttonsendmessage');
+        SetSendButtonActive(false)
+
         let user = JSON.parse(sessionStorage.getItem('user'));
         document.getElementById('logged-in-as').innerText = 'Logged in as ' + user.username + '.';
-        document.getElementById('buttonsendmessage').disabled = true;
 
         const chatMessageInput = document.getElementById('chat-message');
 
         let currentTarget = null;
         let currentTargetName = null;
         let targetPublicKey = null;
+        let chatLoaded = false
+
+        function SetSendButtonActive(state){
+            if(state && chatLoaded && socket != null && socket.readyState === WebSocket.OPEN){
+                sendButton.disabled = false;
+                return;
+            }
+
+            sendButton.disabled = true;
+        }
 
         async function sendMessage(){
+            if(socket == null || socket.readyState !== WebSocket.OPEN){
+                console.error("Web socket not available, try again later");
+                return;
+            }
+
             let message = chatMessageInput.value.trim();
             chatMessageInput.value = "";
 
@@ -94,52 +175,73 @@ session_start()
             let iv = generateIV();
             let encryptedMessage = await encryptMessage(secret, iv, message);
 
-            await postMessage({
+            let data = {
                 sessionId: sessionStorage.getItem('sessionId'),
                 targetId: currentTarget,
                 message: arrayBufferToBase64(encryptedMessage),
                 iv: arrayBufferToBase64(iv),
-            });
+            }
 
+            await postMessage(data);
             await loadChat(currentTarget, currentTargetName);
         }
 
         async function postMessage(data){
+            const json = JSON.stringify(data);
+
             const response = await fetch('insert_message.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(data)
+                body: json
             });
 
             if(!response.ok){
                 console.error("Could not send message");
-            }
-
-            console.log(JSON.stringify(await response.json()))
-        }
-
-        async function loadChat(targetId, targetUsername) {
-            document.getElementById('buttonsendmessage').disabled = true;
-            document.getElementById('chat-name').innerText = "Chat with " + targetUsername;
-            document.getElementById('chat-messages').innerHTML = "";
-
-            currentTarget = targetId;
-
-            currentTargetName = targetUsername;
-            const data = await getMessages(targetId);
-            if(data.failure){
-                window.location = 'login.php';
+                console.log(JSON.stringify(await response.json()))
                 return;
             }
 
-            targetPublicKey = await importPublicKey(data.publicKey);
-            let storedPrivateKey = sessionStorage.getItem("privateKey");
+            sendSocketMessage(json);
+        }
 
+        function scrollToBottom() {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function toggleJumpButton() {
+            const el = document.getElementById('chat-messages');
+            const button = document.getElementById('jump-to-bottom');
+
+            // if user scrolled above the last ~100px
+            if (el.scrollHeight - el.scrollTop - el.clientHeight > 100) {
+                button.style.display = 'block';
+            } else {
+                button.style.display = 'none';
+            }
+        }
+
+        document.getElementById('chat-messages').addEventListener('scroll', toggleJumpButton);
+
+        async function loadChat(targetId, targetUsername) {
+            chatLoaded = false
+            SetSendButtonActive(false)
+            document.getElementById('chat-name').innerText = "Chat with " + targetUsername;
+
+            currentTarget = targetId;
+            currentTargetName = targetUsername;
+
+            const data = await getMessages(targetId);
+            targetPublicKey = await importPublicKey(data.publicKey);
+
+            let storedPrivateKey = sessionStorage.getItem("privateKey");
             let privateKey = await importPrivateKey(storedPrivateKey);
 
             let secret = await deriveSecretKey(privateKey, targetPublicKey);
+
+            document.getElementById('chat-messages').innerHTML = ""; 
 
             const element = document.getElementById('chat-messages');
             for (let obj of data.messages) {
@@ -150,15 +252,38 @@ session_start()
 
                 let decrypted = await decryptMessage(secret, iv, message);
 
-                const span = document.createElement('span');
-                span.style.wordWrap = 'break-word';
-                //span.style.whiteSpace = 'normal';
-                span.innerText = " (" + timestamp + ") " + decrypted.trim() + " (" + (sender === user.id ? "You" : targetUsername) + ")";
-                element.appendChild(span);
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message'); 
+
+                if (sender === user.id) {
+                    messageDiv.classList.add('self'); 
+                } else {
+                    messageDiv.classList.add('other'); 
+                }
+
+                const senderSpan = document.createElement('span');
+                senderSpan.classList.add('sender');
+                senderSpan.innerText = sender === user.id ? "You" : targetUsername;
+
+                const textSpan = document.createElement('span');
+                textSpan.classList.add('text');
+                textSpan.innerText = decrypted;
+
+                const timeSpan = document.createElement('span');
+                timeSpan.classList.add('timestamp');
+                timeSpan.innerText = timestamp;
+
+                messageDiv.appendChild(senderSpan);
+                messageDiv.appendChild(textSpan);
+                messageDiv.appendChild(timeSpan);
+
+                element.appendChild(messageDiv);
                 element.appendChild(document.createElement("br"));
             }
+            scrollToBottom();
 
-            document.getElementById('buttonsendmessage').disabled = false;
+            chatLoaded = true
+            SetSendButtonActive(true)
         }
 
         async function getMessages(targetId){
@@ -177,6 +302,17 @@ session_start()
                 return {};
             }
         }
+        document.getElementById('chat-message').addEventListener('keydown', function(event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+            // Prevent Enter from creating a new line
+            event.preventDefault();
+
+            const messageText = chatMessageInput.value.trim();
+            if (messageText.length > 0) {
+                sendMessage();
+            }
+        }
+    });
     </script>
 </div>
 </body>

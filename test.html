@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 <head>
   <meta charset="UTF-8">
   <title>Title</title>
@@ -18,72 +18,103 @@
     let bobKeyPair = await generateKeyPair();
     let thirdPartyKeyPair = await generateKeyPair();
 
-    logTitle("🔑 Alice's Key Pair");
-    logCodeBlock(await exportPrivateKey(aliceKeyPair.privateKey));
-    logCodeBlock(await exportPublicKey(aliceKeyPair.publicKey));
+    logTitle("🔑 Alice's Key Pair", "message");
+    logCodeBlock(await exportPrivateKey(aliceKeyPair.privateKey), "message");
+    logCodeBlock(await exportPublicKey(aliceKeyPair.publicKey), "message");
 
-    logTitle("🔑 Bob's Key Pair");
-    logCodeBlock(await exportPrivateKey(bobKeyPair.privateKey));
-    logCodeBlock(await exportPublicKey(bobKeyPair.publicKey));
+    logTitle("🔑 Bob's Key Pair", "message");
+    logCodeBlock(await exportPrivateKey(bobKeyPair.privateKey), "message");
+    logCodeBlock(await exportPublicKey(bobKeyPair.publicKey), "message");
 
-    logTitle("🔑 ThirdParty Key Pair");
-    logCodeBlock(await exportPrivateKey(thirdPartyKeyPair.privateKey));
-    logCodeBlock(await exportPublicKey(thirdPartyKeyPair.publicKey));
+    logTitle("🔑 ThirdParty Key Pair", "message");
+    logCodeBlock(await exportPrivateKey(thirdPartyKeyPair.privateKey), "message");
+    logCodeBlock(await exportPublicKey(thirdPartyKeyPair.publicKey), "message");
 
-    logTitle("Message Encryption");
+    logTitle("Message Encryption", "message");
 
-    let initializationVector = generateIV();
-    logCodeBlock("Initialization Vector:\n" + initializationVector);
+    createInput()
+    createButton(async () =>{
+      document.getElementById("div-message").innerHTML = "";
 
-    let aliceSecret = await deriveSecretKey(aliceKeyPair.privateKey, bobKeyPair.publicKey);
-    let aliceMessageToBob = "alice secret message";
-    let encryptedMessage = await encryptMessage(aliceSecret, initializationVector, aliceMessageToBob);
-    if(encryptedMessage === 'Encoding error'){
-      logCodeBlock("Encoding failed.");
-      return;
-    }
+      let message = document.getElementById("message-input").value;
 
-    logCodeBlock(arrayBufferToBase64(encryptedMessage) + " (base64)");
+      let initializationVector = generateIV();
+      logCodeBlock("Initialization Vector:\n" + initializationVector, "div-message");
 
-    let bobSecret = await deriveSecretKey(bobKeyPair.privateKey, aliceKeyPair.publicKey);
-    let decryptedMessage = await decryptMessage(bobSecret, initializationVector, encryptedMessage);
-    if(decryptedMessage === 'Decryption error'){
-      logCodeBlock("Decryption failed.");
-      return;
-    }
+      let aliceSecret = await deriveSecretKey(aliceKeyPair.privateKey, bobKeyPair.publicKey);
+      let encryptedMessage = await encryptMessage(aliceSecret, initializationVector, message);
+      if(encryptedMessage === 'Encoding error'){
+        logCodeBlock("Encoding failed.", "div-message");
+        return;
+      }
 
-    logTitle("Message decrypted");
-    logCodeBlock("Message from alice: " + arrayBufferToBase64(encryptedMessage));
-    logCodeBlock("Bob received a message from alice: " + decryptedMessage);
+      logCodeBlock(arrayBufferToBase64(encryptedMessage) + " (base64)", "div-message");
 
-    logTitle("Attacker's attempt to decrypt");
+      let bobSecret = await deriveSecretKey(bobKeyPair.privateKey, aliceKeyPair.publicKey);
+      let decryptedMessage = await decryptMessage(bobSecret, initializationVector, encryptedMessage);
+      if(decryptedMessage === 'Decryption error'){
+        logCodeBlock("Decryption failed.", "div-message");
+        return;
+      }
 
-    let attackerData = {
-      privateKey: thirdPartyKeyPair.privateKey,
-      iv : initializationVector,
-      encryptedMessage: encryptedMessage,
-    }
-    await attackerDecrypt(attackerData, aliceKeyPair.publicKey, "Alice's");
-    await attackerDecrypt(attackerData, bobKeyPair.publicKey, "Bob's");
+      logTitle("Message decrypted", "div-message");
+      logCodeBlock("Message from alice: " + arrayBufferToBase64(encryptedMessage), "div-message");
+      logCodeBlock("Bob received a message from alice: " + decryptedMessage, "div-message");
+
+      logTitle("Attacker's attempt to decrypt", "div-message");
+      let attackerData = {
+        privateKey: thirdPartyKeyPair.privateKey,
+        iv : initializationVector,
+        encryptedMessage: encryptedMessage,
+      }
+      await attackerDecrypt(attackerData, aliceKeyPair.publicKey, "Alice's");
+      await attackerDecrypt(attackerData, bobKeyPair.publicKey, "Bob's");
+    })
+    createDiv()
+  }
+
+  function createDiv(){
+    let div = document.createElement("div");
+    div.id = "div-message";
+    document.getElementById("message").append(div);
+    return div.id;
+  }
+
+  function createInput(){
+    let input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Input message";
+    input.id = "message-input";
+
+    document.getElementById("message").appendChild(input);
+  }
+
+  function createButton(func){
+    let button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Encrypt";
+    button.addEventListener("click", func);
+
+    document.getElementById("message").appendChild(button);
   }
 
   async function attackerDecrypt(data, publicKey, publicKeyOwner){
     let thirdPartySecret = await deriveSecretKey(data.privateKey, publicKey);
     let thirdPartyDecryptedMessage = await decryptMessage(thirdPartySecret, data.iv, data.encryptedMessage);
-    logCodeBlock("Attempt using " + publicKeyOwner + " public key to decrypt: " + thirdPartyDecryptedMessage);
+    logCodeBlock("Attempt using " + publicKeyOwner + " public key to decrypt: " + thirdPartyDecryptedMessage, "div-message");
   }
 
-  function logTitle(title) {
+  function logTitle(title, divId) {
     const h3 = document.createElement('h3');
     h3.innerText = title;
-    document.getElementById('message').appendChild(h3);
+    document.getElementById(divId).appendChild(h3);
   }
 
-  function logCodeBlock(code){
-    logWithHighlight(code, "language-markup")
+  function logCodeBlock(code, divId){
+    logWithHighlight(code, "language-markup", divId)
   }
 
-  function logWithHighlight(message, className){
+  function logWithHighlight(message, className, divId){
     const pre = document.createElement('pre');
     pre.className = "line-numbers";
 
@@ -93,7 +124,7 @@
 
     pre.appendChild(code);
 
-    const messages = document.getElementById('message');
+    const messages = document.getElementById(divId);
     messages.appendChild(pre);
 
     Prism.highlightAll();
