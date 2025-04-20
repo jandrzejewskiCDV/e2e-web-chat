@@ -228,7 +228,13 @@ session_start()
         }
 
         async function addChatMessage(json){
+            if(currentTarget == null || currentTargetName == null)
+                return;
+
             let obj = JSON.parse(json);
+
+            if( obj.senderId !== user.id && obj.senderId !== currentTarget)
+                return;
 
             let storedPrivateKey = sessionStorage.getItem("privateKey");
             let privateKey = await importPrivateKey(storedPrivateKey);
