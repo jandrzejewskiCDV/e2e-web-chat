@@ -1,4 +1,6 @@
 <?php
+date_default_timezone_set('Europe/Warsaw');
+
 function isDataInvalid($data): bool{
     $sessionId = $data['sessionId'] ?? '';
     $targetId = $data['targetId'] ?? '';
@@ -28,12 +30,18 @@ $message = $data['message'] ?? '';
 $iv = $data['iv'] ?? '';
 
 if(isSessionInvalid($sessionId)){
-    echo "{\"failure\": \"userid mismatch\"}";
+    echo "{\"failure\": \"tab session invalid\"}";
     error_log("session invalid");
     return;
 }
 
 $message = trim($message);
+
+if(strlen($message) > 2048) {
+    echo "{\"failure\": \"message too long\"}";
+    error_log("message too long");
+    return;
+}
 
 $conn = mysqli_connect("localhost", "cdv", "cdv", "cdv");
 
@@ -48,6 +56,12 @@ if(empty($userId)){
     return;
 }
 
+if($userId === $targetId){
+    echo "{\"failure\": \"you cannot send a message to yourself\"}";
+    error_log("userid mismatch");
+    return;
+}
+
 $userOne = min($userId, $targetId);
 $userTwo = max($userId, $targetId);
 
@@ -58,12 +72,21 @@ $stmt->execute();
 $result = $stmt->get_result();
 $chatId = $result->fetch_assoc()['id'];
 
-$insertMessage = "insert into one_on_one_messages(chat_id, message, sender, initialization_vector) values (?, ?, ?, ?)";
+$timestamp = date('Y-m-d H:i:s');
+
+$insertMessage = "insert into one_on_one_messages(chat_id, message, sender, initialization_vector, timestamp) values (?, ?, ?, ?, ?)";
 $stmt = $conn->prepare($insertMessage);
-$stmt->bind_param("isis", $chatId, $message, $userId, $iv);
+$stmt->bind_param("isiss", $chatId, $message, $userId, $iv, $timestamp);
 $stmt->execute();
 $stmt->close();
 $conn->close();
 
-echo "{\"success\": \"message sent\"}";
-error_log("all good");
+$response = [];
+$response['success'] = true;
+$response['message'] = $message;
+$response['iv'] = $iv;
+$response['timestamp'] = $timestamp;
+$response['targetId'] = $targetId;
+$response['senderId'] = $userId;
+
+echo json_encode($response);

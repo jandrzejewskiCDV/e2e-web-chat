@@ -1,96 +1,370 @@
 <?php
-
-define('MAX_PAYLOAD', 1024);
-define('MIN_MESSAGE_INTERVAL', 0.2);
-
-$allowed_origins = [
-    'https://jacek.website',
-    'https://www.jacek.website'
+const MIN_MESSAGE_INTERVAL = 0.2;
+const ALLOWED_ORIGINS = [
+    "https://jacek.website",
+    "https://www.jacek.website"
 ];
 
+$server = null;
 $context = stream_context_create([
     'ssl' => [
-        'local_cert'        => '/etc/letsencrypt/live/jacek.website/fullchain.pem',
-        'local_pk'          => '/etc/letsencrypt/live/jacek.website/privkey.pem',
-        'verify_peer'       => false,
+        'local_cert' => '/etc/letsencrypt/live/jacek.website/fullchain.pem',
+        'local_pk' => '/etc/letsencrypt/live/jacek.website/privkey.pem',
+        'verify_peer' => false,
         'allow_self_signed' => false
     ]
 ]);
 
-$server = stream_socket_server(
-    'tls://0.0.0.0:8443',
-    $errno,
-    $errstr,
-    STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
-    $context
-);
+$sockets = [];
+$socket_2_client_id = [];
+$client_id_2_sockets = [];
+$socket_last_message = [];
 
-if (!$server) {
-    die("Error: $errstr ($errno)\n");
+function onClientSocketConnected($userId): void
+{
+    echo "{$userId} has connected\r\n";
 }
-echo "WSS Server started on port 8443...\n";
 
-$clients       = [];
-$client_users  = [];
-$users_client  = [];
-$last_message_time = [];
+function onClientSocketDisconnect($userId): void
+{
+    echo "{$userId} has disconnected\r\n";
+}
 
-while (true) {
-    $read = array_values($clients);
-    $read[] = $server;
-    $write = $except = null;
+function onClientSocketMessage($userId, $message): void
+{
+    $json = json_decode($message);
 
-    stream_select($read, $write, $except, 0, 200000);
+    if(!isset($json)){
+        error_log("empty json");
+        return;
+    }
 
-    foreach ($read as $sock) {
-        if ($sock === $server) {
-            $new = stream_socket_accept($server, -1);
-            if ($new) {
-                $sid = (int)$new;
-                $clients[$sid] = $new;
-            }
-            continue;
-        }
+    $targetId = $json->targetId;
+    if($targetId === $userId){
+        error_log("user tried to send message to himself");
+        return;
+    }
 
-        $sid = (int)$sock;
-        $data = fread($sock, 2048);
-        if (!$data) {
-            handleDisconnect($sid);
-            continue;
-        }
+    echo "$message\r\n";
 
-        if (str_contains($data, 'Sec-WebSocket-Key:')) {
-            if (!handleHandshake($sock, $data)) {
-                fclose($sock);
-                unset($clients[$sid]);
-            }
-            continue;
-        }
+    $frame = encode($message);
+    sendMessageToClients($targetId, $frame);
+    sendMessageToClients($userId, $frame);
+}
 
-        $msg = decode($data);
+function sendMessageToClients($userId, $frame) : void
+{
+    global $client_id_2_sockets;
 
-        if (isset($last_message_time[$sid]) &&
-            (microtime(true) - $last_message_time[$sid] < MIN_MESSAGE_INTERVAL)) {
-            continue;
-        }
-        $last_message_time[$sid] = microtime(true);
-        if (strlen($msg) > MAX_PAYLOAD) {
-            continue;
-        }
+    if(!isset($client_id_2_sockets[$userId])){
+        error_log("User id has no sockets active");
+        return;
+    }
 
-        if (!isset($client_users[$sid])) {
-            continue;
-        }
-        $fromUserId = $client_users[$sid];
-        onMessage($fromUserId, $msg);
+    $clientSockets = $client_id_2_sockets[$userId];
+    foreach ($clientSockets as $socket_id) {
+        sendMessageToClient($socket_id, $frame);
+    }
+
+    echo "messages sent to $userId\r\n";
+}
+
+function sendMessageToClient($socket_id, $frame) : void
+{
+    global $sockets;
+
+    if(!isset($sockets[$socket_id])){
+        error_log("Socket $socket_id not found");
+        return;
+    }
+
+    try{
+        @fwrite($sockets[$socket_id], $frame);
+    }catch (Exception $e){
+        error_log("Failed writing message to client", $e);
     }
 }
 
-// ─── ENCODING ──────────────────────────────────────────────────────────────
+function handleClientSocketHandshake($socket, $data): bool|int
+{
+    if (isOriginInvalid($data))
+        return false;
 
-function encode(string $payload): string {
+    $phpSessionId = extractPhpSession($data);
+    if (!$phpSessionId)
+        return false;
+
+    $tabSessionId = extractTabSessionId($data);
+    if (!$tabSessionId)
+        return false;
+
+    $userId = extractUserId($phpSessionId, $tabSessionId);
+    if (!$userId)
+        return false;
+
+    fillClientData($socket, $userId);
+    sendClientResponse($socket, $data);
+
+    return $userId;
+}
+
+function sendClientResponse($socket, $data): void
+{
+    preg_match("/Sec-WebSocket-Key: (.+)\r\n/", $data, $m);
+    $accept = base64_encode(sha1(trim($m[1]) . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
+    $resp = "HTTP/1.1 101 Switching Protocols\r\n"
+        . "Upgrade: websocket\r\n"
+        . "Connection: Upgrade\r\n"
+        . "Sec-WebSocket-Accept: $accept\r\n"
+        . "Sec-WebSocket-Protocol: Authorization\r\n"
+        . "\r\n";
+    fwrite($socket, $resp);
+}
+
+function fillClientData($socket, $userId): void
+{
+    global $socket_2_client_id, $client_id_2_sockets;
+    $socket_id = (int)$socket;
+    $socket_2_client_id[$socket_id] = $userId;
+
+    if (!isset($client_id_2_sockets[$userId]))
+        $client_id_2_sockets[$userId] = [];
+
+    $client_id_2_sockets[$userId][] = $socket_id;
+}
+
+function isOriginInvalid($data): bool
+{
+    if (!preg_match("/Origin: (.+)\r\n/", $data, $o)) {
+        error_log("No origin");
+        return true;
+    }
+    $origin = trim($o[1]);
+    if (!in_array($origin, ALLOWED_ORIGINS, true)) {
+        error_log("Bad origin");
+        return true;
+    }
+
+    return false;
+}
+
+function extractPhpSession($data): bool|string
+{
+    if (!preg_match("/Cookie: (.+)\r\n/", $data, $c)) {
+        error_log("No cookies");
+        return false;
+    }
+    parse_str(str_replace('; ', '&', $c[1]), $cookies);
+    if (empty($cookies['PHPSESSID'])) {
+        error_log("No php session");
+        return false;
+    }
+
+    return $cookies['PHPSESSID'];
+}
+
+function extractTabSessionId($data): bool|string
+{
+    if (!preg_match("/Sec-WebSocket-Protocol: (.+)\r\n/", $data, $sp)) {
+        error_log("No protocol");
+        return false;
+    }
+
+    $tabSessionId = trim(str_replace("Authorization, ", "", $sp[1]));
+    if (empty($tabSessionId)) {
+        error_log("No tab session");
+        return false;
+    }
+
+    return $tabSessionId;
+}
+
+function extractUserId($phpSessionId, $tabSessionId): bool|int
+{
+    $sessionData = read_php_session_from_disk($phpSessionId);
+    if (!$sessionData)
+        return false;
+
+    if (!isset($sessionData[$tabSessionId])) {
+        error_log("Invalid tab session id");
+        return false;
+    }
+
+    if (!isset($sessionData[$tabSessionId]['userId'])) {
+        error_log("No user id found in session");
+        return false;
+    }
+
+    return $sessionData[$tabSessionId]['userId'];
+}
+
+function handleClientSocketDisconnect($socket): void
+{
+    global $sockets, $socket_last_message;
+
+    $socket_id = (int)$socket;
+
+    $userId = cleanClientData($socket_id);
+    if ($userId > 0) onClientSocketDisconnect($userId);
+
+    fclose($socket);
+    unset($sockets[$socket_id], $socket_last_message[$socket_id]);
+}
+
+function cleanClientData($socket_id): int
+{
+    global $socket_2_client_id, $client_id_2_sockets;
+
+    if (!isset($socket_2_client_id[$socket_id]))
+        return -1;
+
+    $client_id = $socket_2_client_id[$socket_id];
+    unset($socket_2_client_id[$socket_id]);
+
+    if (!isset($client_id_2_sockets[$client_id]))
+        return $client_id;
+
+    $sockets = $client_id_2_sockets[$client_id];
+    $index = array_search($socket_id, $sockets);
+
+    if ($index === false)
+        return $client_id;
+
+    unset($client_id_2_sockets[$client_id][$index]);
+
+    if (count($client_id_2_sockets[$client_id]) != 0)
+        return $client_id;
+
+    unset($client_id_2_sockets[$client_id]);
+
+    return $client_id;
+}
+function handleServerSocket(): void
+{
+    global $server, $sockets;
+
+    $new_socket = stream_socket_accept($server, -1);
+    if (!$new_socket)
+        return;
+
+    $socket_id = (int)$new_socket;
+    $sockets[$socket_id] = $new_socket;
+}
+
+function handleClientSocket($socket): void
+{
+    $socket_id = (int)$socket;
+    $dataInput = fread($socket, 2048);
+    if (!$dataInput) {
+        handleClientSocketDisconnect($socket);
+        return;
+    }
+
+    if (str_contains($dataInput, 'Sec-WebSocket-Key:')) {
+        $userId = handleClientSocketHandshake($socket, $dataInput);
+
+        if (!$userId)
+            handleClientSocketDisconnect($socket);
+        else
+            onClientSocketConnected($userId);
+
+        return;
+    }
+
+    if(isClientRateLimited($socket_id)) {
+        error_log("Client rate limit exceeded");
+        return;
+    }
+
+    try{
+        handleClientSocketMessage($socket, $dataInput);
+    }catch (exception $e){
+        error_log("Failed handling client socket message", $e);
+    }
+}
+
+function handleClientSocketMessage($socket, $dataInput): void
+{
+    global $socket_2_client_id;
+    $socket_id = (int) $socket;
+
+    if(!isset($socket_2_client_id[$socket_id])) {
+        error_log("No client id found for socket");
+        return;
+    }
+
+    $userId = $socket_2_client_id[$socket_id];
+    $message = decode($dataInput);
+    onClientSocketMessage($userId, $message);
+}
+
+function isClientRateLimited($socket_id): bool
+{
+    global $socket_last_message;
+
+    $time = microtime(true);
+
+    if (isset($socket_last_message[$socket_id]) &&
+        ($time - $socket_last_message[$socket_id] < MIN_MESSAGE_INTERVAL)) {
+        return true;
+    }
+
+    $socket_last_message[$socket_id] = $time;
+    return false;
+}
+
+function handleSocket($socket): void
+{
+    global $server;
+
+    if ($socket === $server) {
+        handleServerSocket();
+        return;
+    }
+
+    handleClientSocket($socket);
+}
+
+function read(): void
+{
+    global $server, $sockets;
+
+    while (true){
+        $read = array_values($sockets);
+        $read[] = $server;
+        $write = null;
+        $except = null;
+
+        stream_select($read, $write, $except, 0, 200000);
+
+        foreach ($read as $socket) {
+            handleSocket($socket);
+        }
+    }
+}
+
+function listen(): void
+{
+    global $server, $context;
+
+    $server = stream_socket_server(
+        'tls://0.0.0.0:8443',
+        $errno,
+        $errstr,
+        STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
+        $context
+    );
+
+    if (!$server)
+        die("Error: $errstr ($errno)\n");
+
+    echo "WSS Server started on port 8443...\n";
+}
+
+function encode(string $payload): string
+{
     $frame = chr(0x81);
-    $len   = strlen($payload);
+    $len = strlen($payload);
     if ($len <= 125) {
         $frame .= chr($len);
     } elseif ($len <= 0xFFFF) {
@@ -101,13 +375,14 @@ function encode(string $payload): string {
     return $frame . $payload;
 }
 
-function decode(string $data): string {
+function decode(string $data): string
+{
     $len = ord($data[1]) & 0x7F;
     if ($len === 126) {
-        $masks   = substr($data, 4, 4);
+        $masks = substr($data, 4, 4);
         $payload = substr($data, 8);
     } else {
-        $masks   = substr($data, 2, 4);
+        $masks = substr($data, 2, 4);
         $payload = substr($data, 6);
     }
     $text = '';
@@ -117,148 +392,33 @@ function decode(string $data): string {
     return $text;
 }
 
-// ─── CUSTOMIZABLE HOOKS ─────────────────────────────────────────────────────
+function read_php_session_from_disk($phpSessionId): bool|array
+{
+    $sessionPath = ini_get('session.save_path');
+    $sessionFile = "$sessionPath/sess_$phpSessionId";
 
-function onHandshake(string $phpsessId, string $sessionKey): int {
-    $data = read_php_session($phpsessId);
-
-    if(empty($data)){
-        error_log("Invalid php session");
-        return -1;
-    }
-
-    if(!isset($data[$sessionKey])){
-        error_log("Invalid session key");
-        return -1;
-    }
-
-    $userId = $data[$sessionKey]['userId'];
-    if(!$userId){
-        error_log("Empty user id");
-        return -1;
-    }
-
-    return $userId;
-}
-
-function onMessage(int $fromUserId, string $jsonData): void {
-    global $users_client, $clients;
-
-    $data = json_decode($jsonData);
-    if (!$data || empty($data->targetId) || !isset($users_client[$data->targetId])) {
-        error_log("no data or no target id or users client not sent");
-        return;
-    }
-
-    $targetSid = $users_client[$data->targetId];
-    if (!isset($clients[$targetSid])) {
-        error_log("no target id");
-        return;
-    }
-
-    echo $fromUserId . " to " . $data->targetId . "\r\n";
-
-    $frame = encode($fromUserId);
-    @fwrite($clients[$targetSid], $frame);
-}
-
-function onDisconnect(string $userId): void {
-    echo "$userId disconnected\r\n";
-}
-
-// ─── HANDSHAKE HANDLER ─────────────────────────────────────────────────────
-
-function handleHandshake($sock, string $data): bool {
-    global $allowed_origins, $client_users, $users_client;
-
-    if (!preg_match("/Origin: (.+)\r\n/", $data, $o)) {
-        error_log("no origin");
+    if (!file_exists($sessionFile)) {
+        error_log("Invalid session file");
         return false;
     }
-    $origin = trim($o[1]);
-    if (!in_array($origin, $allowed_origins, true)) {
-        error_log("bad origin");
-        return false;
-    }
-
-    if (!preg_match("/Cookie: (.+)\r\n/", $data, $c)) {
-        error_log("no cookies");
-        return false;
-    }
-    parse_str(str_replace('; ', '&', $c[1]), $cookies);
-    if (empty($cookies['PHPSESSID'])) {
-        error_log("no php");
-        return false;
-    }
-    $phpSessionId = $cookies['PHPSESSID'];
-
-    if (!preg_match("/Sec-WebSocket-Protocol: (.+)\r\n/", $data, $sp)) {
-        error_log("no protocol");
-        return false;
-    }
-
-    $tabSessionId = trim(str_replace("Authorization, ", "", $sp[1]));
-    if (empty($tabSessionId)) {
-        error_log("empty tab session");
-        return false;
-    }
-
-    $userId = onHandshake($phpSessionId, $tabSessionId);
-    if ($userId < 0) {
-        error_log("invalid user");
-        return false;
-    }
-
-    $sid = (int)$sock;
-    $client_users[$sid] = $userId;
-    $users_client[$userId] = $sid;
-
-    preg_match("/Sec-WebSocket-Key: (.+)\r\n/", $data, $m);
-    $accept = base64_encode(sha1(trim($m[1]) . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-    $resp = "HTTP/1.1 101 Switching Protocols\r\n"
-        . "Upgrade: websocket\r\n"
-        . "Connection: Upgrade\r\n"
-        . "Sec-WebSocket-Accept: $accept\r\n"
-        . "Sec-WebSocket-Protocol: $tabSessionId\r\n"
-        . "\r\n";
-    fwrite($sock, $resp);
-
-    echo $userId . " has connected \r\n";
-
-    return true;
-}
-
-// ─── DISCONNECT HANDLER ─────────────────────────────────────────────────────
-
-function handleDisconnect(int $sid): void {
-    global $clients, $client_users, $users_client, $last_message_time;
-    if (isset($client_users[$sid])) {
-        onDisconnect($client_users[$sid]);
-        unset($users_client[$client_users[$sid]]);
-        unset($client_users[$sid]);
-    }
-    fclose($clients[$sid]);
-    unset($clients[$sid], $last_message_time[$sid]);
-}
-
-function read_php_session($sessionId) {
-    $sessionPath = ini_get("session.save_path");
-    $sessionFile = "$sessionPath/sess_$sessionId";
-
-    if (!file_exists($sessionFile)) return null;
 
     $contents = file_get_contents($sessionFile);
+    if (!$contents) {
+        error_log("Failed getting contents of session file");
+        return false;
+    }
 
-    return unserialize_php($contents);
+    return deserialize_php($contents);
 }
 
-function unserialize_php($session_data) {
+function deserialize_php($session_data): bool|array
+{
     $return_data = [];
     $offset = 0;
     while ($offset < strlen($session_data)) {
         if (!str_contains(substr($session_data, $offset), "|")) {
-            error_log("invalid data, remaining: " . substr($session_data, $offset));
-            return [];
+            error_log("deserialize failed, invalid data, remaining: " . substr($session_data, $offset));
+            return false;
         }
         $pos = strpos($session_data, "|", $offset);
         $num = $pos - $offset;
@@ -270,3 +430,6 @@ function unserialize_php($session_data) {
     }
     return $return_data;
 }
+
+listen();
+read();

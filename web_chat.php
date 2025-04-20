@@ -19,75 +19,6 @@ session_start()
         <h7 id="logged-in-as"></h7>
 
         <script>
-            let retry = 0;
-            let maxRetries = 2;
-            let socket = null;
-
-            function connectSocket(){
-                console.log(sessionStorage.getItem('sessionId'))
-                socket = new WebSocket('https://jacek.website:8443', [
-                    'Authorization', sessionStorage.getItem('sessionId')
-                ]);
-                socket.addEventListener('open', onOpen);
-                socket.addEventListener('close', onClose);
-                socket.addEventListener('error', onError);
-                socket.addEventListener('message', onMessage);
-            }
-
-            function onOpen(event){
-                SetSendButtonActive(true)
-                console.log("Web socket connected!")
-                retry = 0;
-            }
-
-            function onClose(event){
-                console.log("WebSocket closed with code:", event.code, "and reason:", event.reason);
-
-                SetSendButtonActive(false)
-                socket = null;
-
-                if(retry === maxRetries){
-                    console.error("websocket connection failed!");
-                    window.location.href = 'login.php';
-                    return;
-                }
-
-                retry++;
-                console.log("retry count: " + retry);
-                connectSocket();
-            }
-
-            function onError(event){
-                console.log("Error", event);
-                console.log(event.code)
-            }
-
-            async function onMessage(event){
-                if(user == null || currentTarget == null || currentTargetName == null || !chatLoaded)
-                    return;
-
-                console.log(event.data)
-                console.log(Number(event.data))
-
-                if(currentTarget !== Number(event.data)){
-                    return;
-                }
-
-                await loadChat(currentTarget, currentTargetName);
-            }
-
-            function sendSocketMessage(json){
-                if(socket == null || socket.readyState !== WebSocket.OPEN)
-                    return;
-
-                console.log("socket sent!", json)
-                socket.send(json)
-            }
-
-            connectSocket();
-        </script>
-
-        <script>
             let sessionId = sessionStorage.getItem('sessionId');
             let element = document.getElementsByClassName("users-list")[0];
 
@@ -139,6 +70,7 @@ session_start()
             <textarea id="chat-message" placeholder="Type your message here..."></textarea>
             <button id="buttonsendmessage" onclick="sendMessage()" disabled>Send</button>
         </div>
+        <small id="byte-counter">0 / 2048 bytes</small>
         <button id="jump-to-bottom" style="display: none;" onclick="scrollToBottom()">⬇ Jump to Bottom</button>
     </div>
 
@@ -173,6 +105,7 @@ session_start()
 
             let message = chatMessageInput.value.trim();
             chatMessageInput.value = "";
+            byteCounter.textContent = `0 / 2048 bytes`;
 
             let storedPrivateKey = sessionStorage.getItem("privateKey");
             let privateKey = await importPrivateKey(storedPrivateKey);
@@ -189,27 +122,27 @@ session_start()
             }
 
             await postMessage(data);
-            await loadChat(currentTarget, currentTargetName);
+            //await loadChat(currentTarget, currentTargetName);
         }
 
         async function postMessage(data){
-            const json = JSON.stringify(data);
-
             const response = await fetch('insert_message.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: json
+                body: JSON.stringify(data)
             });
 
-            if(!response.ok){
+            const json = await response.json();
+            console.log(json);
+
+            if(!response.ok || json.failure){
                 console.error("Could not send message");
-                console.log(JSON.stringify(await response.json()))
                 return;
             }
 
-            sendSocketMessage(json);
+            sendSocketMessage(JSON.stringify(json));
         }
 
         function scrollToBottom() {
@@ -232,6 +165,9 @@ session_start()
         document.getElementById('chat-messages').addEventListener('scroll', toggleJumpButton);
 
         async function loadChat(targetId, targetUsername) {
+            if(targetId == null || targetUsername == null)
+                return;
+
             chatLoaded = false
             SetSendButtonActive(false)
             document.getElementById('chat-name').innerText = "Chat with " + targetUsername;
@@ -244,7 +180,6 @@ session_start()
 
             let storedPrivateKey = sessionStorage.getItem("privateKey");
             let privateKey = await importPrivateKey(storedPrivateKey);
-
             let secret = await deriveSecretKey(privateKey, targetPublicKey);
 
             document.getElementById('chat-messages').innerHTML = ""; 
@@ -292,6 +227,58 @@ session_start()
             SetSendButtonActive(true)
         }
 
+        async function addChatMessage(json){
+            let obj = JSON.parse(json);
+
+            let storedPrivateKey = sessionStorage.getItem("privateKey");
+            let privateKey = await importPrivateKey(storedPrivateKey);
+            let secret = await deriveSecretKey(privateKey, targetPublicKey);
+
+            let message = base64ToArrayBuffer(obj.message);
+            let iv = base64ToArrayBuffer(obj.iv);
+            let sender = obj.senderId;
+            let timestamp = obj.timestamp;
+
+            let decrypted = await decryptMessage(secret, iv, message);
+
+            const element = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+
+            if (sender === user.id) {
+                messageDiv.classList.add('self');
+            } else {
+                messageDiv.classList.add('other');
+            }
+
+            const senderSpan = document.createElement('span');
+            senderSpan.classList.add('sender');
+            senderSpan.innerText = sender === user.id ? "You" : currentTargetName;
+
+            const textSpan = document.createElement('span');
+            textSpan.classList.add('text');
+            textSpan.innerText = decrypted;
+
+            const timeSpan = document.createElement('span');
+            timeSpan.classList.add('timestamp');
+            timeSpan.innerText = timestamp;
+
+            messageDiv.appendChild(senderSpan);
+            messageDiv.appendChild(textSpan);
+            messageDiv.appendChild(timeSpan);
+
+            element.appendChild(messageDiv);
+            element.appendChild(document.createElement("br"));
+
+            const chatMessages = document.getElementById('chat-messages');
+
+            const isAtBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 150;
+
+            if (isAtBottom) {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        }
+
         async function getMessages(targetId){
             try{
                 const body = await fetch('get_messages.php', {
@@ -319,6 +306,92 @@ session_start()
             }
         }
     });
+    </script>
+
+    <script>
+        let retry = 0;
+        let maxRetries = 2;
+        let socket = null;
+
+        function connectSocket(){
+            socket = new WebSocket('https://jacek.website:8443', [
+                'Authorization', sessionStorage.getItem('sessionId')
+            ]);
+            socket.addEventListener('open', onOpen);
+            socket.addEventListener('close', onClose);
+            socket.addEventListener('error', onError);
+            socket.addEventListener('message', onMessage);
+        }
+
+        async function onOpen(event){
+            SetSendButtonActive(true)
+            console.log("Web socket connected!")
+            retry = 0;
+
+            await loadChat(currentTarget, currentTargetName);
+        }
+
+        function onClose(event){
+            console.log("WebSocket closed with code:", event.code, "and reason:", event.reason);
+
+            SetSendButtonActive(false)
+            socket = null;
+
+            if(retry === maxRetries){
+                console.error("websocket connection failed!");
+                window.location.href = 'login.php';
+                return;
+            }
+
+            retry++;
+            console.log("retry count: " + retry);
+            connectSocket();
+        }
+
+        function onError(event){
+            console.log("Error", event);
+            console.log(event.code)
+        }
+
+        async function onMessage(event){
+            if(user == null || currentTarget == null || currentTargetName == null || !chatLoaded)
+                return;
+
+            await addChatMessage(event.data);
+
+            //await loadChat(currentTarget, currentTargetName);
+        }
+
+        function sendSocketMessage(json){
+            if(socket == null || socket.readyState !== WebSocket.OPEN)
+                return;
+
+            socket.send(json);
+        }
+
+        connectSocket();
+    </script>
+
+    <script>
+        const textarea = document.getElementById('chat-message');
+        const byteCounter = document.getElementById('byte-counter');
+        const encoder = new TextEncoder();
+
+        textarea.addEventListener('input', () => {
+            let value = textarea.value;
+            let encoded = encoder.encode(value);
+
+            if (encoded.length > 2048) {
+                let i = value.length;
+                while (i > 0 && encoder.encode(value.slice(0, i)).length > 2048) {
+                    i--;
+                }
+                textarea.value = value.slice(0, i);
+                encoded = encoder.encode(textarea.value); // Update encoded
+            }
+
+            byteCounter.textContent = `${encoded.length} / 2048 bytes`;
+        });
     </script>
 </div>
 </body>
