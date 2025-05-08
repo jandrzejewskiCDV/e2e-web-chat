@@ -122,9 +122,16 @@ button:disabled {
         flex-direction: column;
     }
     .users-list {
-        width: 100%;
+        width: calc(100% - 20px);
         margin: 0 0 20px 0;
+        padding: 10px;
     }
+    .chat-area{
+        flex: none;
+        max-height: 65vh;
+        width: calc (100% - 20px);
+        padding: 10px;
+   }
 }
 
 .message {

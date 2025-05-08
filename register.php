@@ -1,4 +1,8 @@
 <?php
+function isStrongPassword(string $password): bool {
+    return preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&\-_#])[A-Za-z\d@$!%*?&\-_#]{8,}$/', $password);
+}
+
 function handleRegistration(): void
 {
     if(!isset($_POST['register'])) {
@@ -21,6 +25,11 @@ function handleRegistration(): void
 
     if (empty($password)) {
         $_SESSION['register-error-message'] = 'Password cannot be empty';
+        return;
+    }
+
+    if (!isStrongPassword($password)) {
+        $_SESSION['register-error-message'] = "Password must include:\nUpper, lower, number & symbol.";
         return;
     }
 
@@ -102,7 +111,7 @@ handleRegistration();
             <input type="hidden" id="encrypted-private-key" name="encrypted-private-key">
             <input type="hidden" id="initialization-vector" name="initialization-vector">
             <input type="hidden" id="salt" name="salt" hidden>
-            <span id="error-message" class="error-message"></span>
+            <span id="error-message" class="error-message">&nbsp;</span>
             <button id="register-button" type="submit" name="register">Register</button>
         </form>
 
@@ -156,21 +165,36 @@ handleRegistration();
                 errorMessage.textContent = '';
             }
 
+            function isStrongPassword(password) {
+                const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&\-_#])[A-Za-z\d@$!%*?&\-_#]{8,}$/;
+                return strongPasswordRegex.test(password);
+            }
+
             async function handleSubmit(event) {
                 event.preventDefault();
 
-                if (passwordField.value !== repeatPasswordField.value)
+                const password = passwordField.value;
+                const repeatPassword = repeatPasswordField.value;
+
+                if (password !== repeatPassword) {
+                    errorMessage.textContent = "Passwords don't match";
                     return;
+                }
+
+                if (!isStrongPassword(password)) {
+                    errorMessage.textContent = "Password must include:\nUpper, lower, number & symbol.";
+                    return;
+                }
 
                 await generateKey();
 
-                registrationForm.removeEventListener('submit', handleSubmit);
-                registrationForm.requestSubmit(submitButton);
-                registrationForm.addEventListener('submit', handleSubmit);
-            }
+                    registrationForm.removeEventListener('submit', handleSubmit);
+                    registrationForm.requestSubmit(submitButton);
+                    registrationForm.addEventListener('submit', handleSubmit);
+                }
 
-            repeatPasswordField.addEventListener('keyup', checkRepeatedPassword);
-            registrationForm.addEventListener('submit', handleSubmit);
+                repeatPasswordField.addEventListener('keyup', checkRepeatedPassword);
+                registrationForm.addEventListener('submit', handleSubmit);
         </script>
     </div>
 </main>

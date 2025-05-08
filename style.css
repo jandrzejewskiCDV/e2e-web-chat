@@ -31,7 +31,15 @@ body {
     padding: 10px 25px 10px;
     font-family: "Source Code Pro", monospace;
     font-size: 40px;
-    /*background-color: #2C2C54;
+    text-align: center;
+
+    font-size: min(40px,6vw);
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+        /*background-color: #2C2C54;
     border-radius: 30px;
     color: white;*/
 }
@@ -51,10 +59,23 @@ body {
     cursor: pointer;
 }
 .start-form-reg{
-    display: block;
+    /*display: block;
     width: auto;
     align-self: center;
     width: 80%;
+    padding: 10px 50px;
+    font-size: min(16px,2.1vw);
+    font-family: 'Rubik', Sans-Serif;
+    border-radius: 25px;
+    background-color: #474787;
+    color: white;
+    border: none;
+    cursor: pointer;*/
+
+    display: block;
+    width: auto;
+    align-self: center;
+    width: 100%;
     padding: 10px 50px;
     font-size: 16px;
     font-family: 'Rubik', Sans-Serif;
@@ -70,8 +91,19 @@ body {
     background-color: #2C2C54;
 }
 
-.error-message{
+.error-message {
     color: red;
+    font-size: 0.85rem;
+    text-align: center;
+    max-width: 100%;
+    word-break: break-word;
+    white-space: pre-line; 
+
+    min-height: 2em; 
+    margin: 0;
+    padding: 0.5em 0 0;
+
+    display: block;
 }
 
 .login-form{
