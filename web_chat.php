@@ -122,7 +122,6 @@ session_start()
             }
 
             await postMessage(data);
-            //await loadChat(currentTarget, currentTargetName);
         }
 
         async function postMessage(data){
@@ -146,15 +145,15 @@ session_start()
         }
 
         function scrollToBottom() {
-            const chatMessages = document.getElementById('chat-messages');
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
+			const chatMessages = document.getElementById('chat-messages');
+			chatMessages.scrollTop = chatMessages.scrollHeight;
+			toggleJumpButton();
+		}		
 
         function toggleJumpButton() {
             const el = document.getElementById('chat-messages');
             const button = document.getElementById('jump-to-bottom');
 
-            // if user scrolled above the last ~100px
             if (el.scrollHeight - el.scrollTop - el.clientHeight > 100) {
                 button.style.display = 'block';
             } else {
@@ -221,7 +220,11 @@ session_start()
                 element.appendChild(messageDiv);
                 element.appendChild(document.createElement("br"));
             }
-            scrollToBottom();
+            
+			requestAnimationFrame(() => {
+				scrollToBottom();
+				toggleJumpButton();
+			});
 
             chatLoaded = true
             SetSendButtonActive(true)
@@ -278,11 +281,13 @@ session_start()
 
             const chatMessages = document.getElementById('chat-messages');
 
-            const isAtBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 150;
-
-            if (isAtBottom) {
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
+            const jumpToBottom = document.getElementById('jump-to-bottom');
+			
+			if(jumpToBottom.style.display === 'none'){
+				requestAnimationFrame(() => {
+					scrollToBottom();
+				});
+			}
         }
 
         async function getMessages(targetId){
@@ -303,7 +308,6 @@ session_start()
         }
         document.getElementById('chat-message').addEventListener('keydown', function(event) {
         if (event.key === "Enter" && !event.shiftKey) {
-            // Prevent Enter from creating a new line
             event.preventDefault();
 
             const messageText = chatMessageInput.value.trim();
@@ -364,8 +368,6 @@ session_start()
                 return;
 
             await addChatMessage(event.data);
-
-            //await loadChat(currentTarget, currentTargetName);
         }
 
         function sendSocketMessage(json){
@@ -393,7 +395,7 @@ session_start()
                     i--;
                 }
                 textarea.value = value.slice(0, i);
-                encoded = encoder.encode(textarea.value); // Update encoded
+                encoded = encoder.encode(textarea.value);
             }
 
             byteCounter.textContent = `${encoded.length} / 2048 bytes`;
