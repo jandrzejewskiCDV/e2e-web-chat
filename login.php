@@ -1,3 +1,13 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Register</title>
+    <link rel="stylesheet" href="style.css"/>
+    <script src="message_encryption.js"></script>
+    <script src="key_wrapper.js"></script>
+	
 <?php
 function generateUuidV4(): string {
     $data = random_bytes(16);
@@ -83,16 +93,7 @@ function handleLogin(): void
 session_start();
 handleLogin();
 ?>
-
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Register</title>
-    <link rel="stylesheet" href="style.css"/>
-    <script src="message_encryption.js"></script>
-    <script src="key_wrapper.js"></script>
+	
 </head>
 <body>
 <main>
