@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Register</title>
+    <title>Login</title>
     <link rel="stylesheet" href="style.css"/>
     <script src="message_encryption.js"></script>
     <script src="key_wrapper.js"></script>

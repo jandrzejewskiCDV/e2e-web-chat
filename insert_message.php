@@ -35,7 +35,19 @@ if(isSessionInvalid($sessionId)){
     return;
 }
 
+if($message === null){
+	echo "{\"failure\": \"message cannot be null\"}";
+    error_log("message cannot be null");
+    return;
+}
+
 $message = trim($message);
+
+if ($message === '') {
+    echo "{\"failure\": \"message cannot be empty\"}";
+    error_log("message cannot be empty");
+    return;
+}
 
 if(strlen($message) > 2048) {
     echo "{\"failure\": \"message too long\"}";

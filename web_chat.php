@@ -68,10 +68,10 @@ session_start()
         </div>
         <div class="chat-input">
             <textarea id="chat-message" placeholder="Type your message here..."></textarea>
-            <button id="buttonsendmessage" onclick="sendMessage()" disabled>Send</button>
+			<button id="jump-to-bottom" style="display: none;" onclick="scrollToBottom()">⬇</button>
+			<button id="buttonsendmessage" onclick="sendMessage()" disabled>Send</button>
         </div>
         <small id="byte-counter">0 / 2048 bytes</small>
-        <button id="jump-to-bottom" style="display: none;" onclick="scrollToBottom()">⬇ Jump to Bottom</button>
     </div>
 
     <script>
@@ -104,6 +104,10 @@ session_start()
             }
 
             let message = chatMessageInput.value.trim();
+			
+			if(!message)
+				return;
+			
             chatMessageInput.value = "";
             byteCounter.textContent = `0 / 2048 bytes`;
 
